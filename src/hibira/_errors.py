@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 from typing import Any
 
@@ -10,6 +11,10 @@ class HibiraError(Exception):
 
 class ConfigError(HibiraError):
     """A setting is missing or invalid (app id, key, secret, push instance...)."""
+
+
+class ConnectionError(HibiraError, builtins.ConnectionError):  # noqa: A001
+    """The request did not get an answer: DNS, connect, TLS, proxy or timeout failure."""
 
 
 class InvalidWebhook(HibiraError):

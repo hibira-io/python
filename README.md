@@ -240,7 +240,9 @@ reads it once, waiting up to 25 seconds for an answer.
 Every error is a `hibira.HibiraError`. HTTP errors are `hibira.HTTPError`
 (`status`, `message`, `body`), with subclasses `AuthenticationError` (401,
 403), `NotFound` (404), `PayloadTooLarge` (413, the event is over the plan's
-message size) and `RateLimited` (429). Missing settings raise `ConfigError`.
+message size) and `RateLimited` (429). Network failures (DNS, connect,
+TLS, proxy, timeout) raise `hibira.ConnectionError`. Missing settings raise
+`ConfigError`.
 
 ## Development
 
