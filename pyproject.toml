@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hibira"
+dynamic = ["version"]
+description = "Hibira for Python: realtime events, channel auth, webhooks, push notifications, approvals and LLM streaming (Pusher-compatible)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "Hibira", email = "dev@hibira.io" }]
+keywords = ["hibira", "pusher", "websocket", "realtime", "channels", "push notifications", "llm", "streaming", "langgraph", "fastapi"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: AsyncIO",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Software Development :: Libraries",
+  "Typing :: Typed",
+]
+dependencies = ["httpx>=0.24,<1"]
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.100"]
+
+[project.urls]
+Homepage = "https://hibira.io"
+Documentation = "https://github.com/hibira-io/python#readme"
+Source = "https://github.com/hibira-io/python"
+Changelog = "https://github.com/hibira-io/python/blob/main/CHANGELOG.md"
+Issues = "https://github.com/hibira-io/python/issues"
+
+[dependency-groups]
+dev = ["pytest>=8", "fastapi>=0.100", "ruff>=0.6", "mypy>=1.10"]
+
+[tool.hatch.version]
+path = "src/hibira/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hibira"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "CHANGELOG.md", "LICENSE"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE"]
+ignore = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B008"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src/hibira"]
