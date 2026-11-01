@@ -182,3 +182,20 @@ def test_async_client():
     asyncio.run(main())
     assert json.loads(seen[0].content)["data"] == '{"x":1}'
     check_signature(seen[0])
+
+
+def test_network_errors_are_hibira_errors():
+    def handler(req):
+        raise httpx.ConnectError("connection refused", request=req)
+
+    with pytest.raises(hibira.ConnectionError) as info:
+        make(handler).trigger("a", "e", 1)
+    assert isinstance(info.value, hibira.HibiraError) and isinstance(info.value, ConnectionError)
+    assert isinstance(info.value.__cause__, httpx.ConnectError)
+
+    async def main():
+        c = hibira.AsyncClient("1", "k", "s", http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+        with pytest.raises(hibira.ConnectionError):
+            await c.trigger("a", "e", 1)
+
+    asyncio.run(main())

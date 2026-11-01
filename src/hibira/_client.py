@@ -10,6 +10,7 @@ import httpx
 
 from . import _signing
 from ._errors import ConfigError, error_for
+from ._errors import ConnectionError as HibiraConnectionError
 from ._version import __version__
 
 DEFAULT_HOST = "ws.hibira.io"
@@ -291,14 +292,17 @@ class Client(_Base):
         self._http = http_client or httpx.Client(timeout=self.timeout)
 
     def _send(self, req: _Request, timeout: float | None = None) -> Any:
-        r = self._http.request(
-            req.method,
-            req.url,
-            params=req.params or None,
-            content=req.content,
-            headers=req.headers,
-            timeout=timeout if timeout is not None else self.timeout,
-        )
+        try:
+            r = self._http.request(
+                req.method,
+                req.url,
+                params=req.params or None,
+                content=req.content,
+                headers=req.headers,
+                timeout=timeout if timeout is not None else self.timeout,
+            )
+        except httpx.TransportError as err:
+            raise HibiraConnectionError(f"{req.method} {req.url}: {err}") from err
         return _parse(r)
 
     def close(self) -> None:
@@ -397,14 +401,17 @@ class AsyncClient(_Base):
         self._http = http_client or httpx.AsyncClient(timeout=self.timeout)
 
     async def _send(self, req: _Request, timeout: float | None = None) -> Any:
-        r = await self._http.request(
-            req.method,
-            req.url,
-            params=req.params or None,
-            content=req.content,
-            headers=req.headers,
-            timeout=timeout if timeout is not None else self.timeout,
-        )
+        try:
+            r = await self._http.request(
+                req.method,
+                req.url,
+                params=req.params or None,
+                content=req.content,
+                headers=req.headers,
+                timeout=timeout if timeout is not None else self.timeout,
+            )
+        except httpx.TransportError as err:
+            raise HibiraConnectionError(f"{req.method} {req.url}: {err}") from err
         return _parse(r)
 
     async def aclose(self) -> None:

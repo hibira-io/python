@@ -10,6 +10,7 @@ from ._client import DEFAULT_HOST, AsyncClient, Client
 from ._errors import (
     AuthenticationError,
     ConfigError,
+    ConnectionError,
     HibiraError,
     HTTPError,
     InvalidWebhook,
@@ -27,6 +28,7 @@ __all__ = [
     "AuthenticationError",
     "Client",
     "ConfigError",
+    "ConnectionError",
     "HTTPError",
     "HibiraError",
     "InvalidWebhook",
