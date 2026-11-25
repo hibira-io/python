@@ -49,7 +49,8 @@ def sign_query(
     q["auth_timestamp"] = str(int(now if now is not None else time.time()))
     q["auth_version"] = "1.0"
     if body:
-        q["body_md5"] = hashlib.md5(body).hexdigest()
+        # body_md5 is a checksum the Pusher-protocol signature requires, not a secret hash.
+        q["body_md5"] = hashlib.md5(body, usedforsecurity=False).hexdigest()
     string = "&".join(f"{k}={q[k]}" for k in sorted(q))
     q["auth_signature"] = hmac_hex(secret, f"{method.upper()}\n{path}\n{string}")
     return q
