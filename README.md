@@ -235,6 +235,65 @@ if result["status"] == "approved":
 `status` is `pending`, `approved`, `rejected` or `expired`. `get_approval(id, wait=25)`
 reads it once, waiting up to 25 seconds for an answer.
 
+## Chat API
+
+Conversations with stored history, read receipts and offline push
+([reference](https://hibira.io/chat-api)). Clients receive `chat.*` events on
+`#server-to-user-<user_id>` after `pusher.signin`.
+
+```python
+client.put_conversation("order-1042", name="Order #1042", members=["cust_7", "agent_2"])
+client.send_message("order-1042", "agent_2", "Your parcel left the warehouse.", push="offline")
+page = client.list_messages("order-1042", after=last_seq, limit=50)  # {"messages", "last_seq"}
+client.mark_read("order-1042", "cust_7", page["last_seq"])
+client.user_conversations("cust_7")  # latest first, each with "unread"
+```
+
+Also `get_conversation`, `delete_conversation`, `add_members`, `remove_member`,
+`system_message`, and `chat_request(method, path, params, body)` for every other
+call (typing, reactions, edits, search, moderation). `AsyncClient` has the same
+methods, awaitable.
+
+## Waiting rooms
+
+Put a [Hibira waiting room](https://hibira.io/waiting-room) in front of a
+ticket drop or launch. Visitors without a pass go to the hosted queue page
+(requests other than GET get a 403); when it's their turn they come back with
+`?hibira_pass=...`, which is checked, kept in the HttpOnly cookie
+`hibira_wr_<room>` and removed from the URL. No extra dependencies.
+
+```python
+from hibira.waiting_room import WaitingRoom, ASGIMiddleware, WSGIMiddleware
+
+room = WaitingRoom(app_key=os.environ["HIBIRA_KEY"], secret=os.environ["HIBIRA_SECRET"], room="presale")
+
+# FastAPI, Starlette, Litestar, Quart (ASGI): request.state.hibira_pass
+app.add_middleware(ASGIMiddleware, room=room, paths=["/drop"])
+
+# Flask, Bottle, Pyramid, Falcon (WSGI): request.environ["hibira.pass"]
+app.wsgi_app = WSGIMiddleware(app.wsgi_app, room=room, paths=["/drop"])
+```
+
+The pass has `number`, `ticket_id` (record it to allow one checkout per number)
+and `expires_at`. During a secret rotation give `secret=[new, old]`. For rooms
+with one place per signed-in customer, pass `user=lambda req: sign_user(SECRET, "presale", customer_id(req))`
+and compare `pass.user_id` at checkout. `verify_pass(token, secret, room=...)`
+checks a pass anywhere else. Django has its own middleware in
+[django-hibira](https://github.com/hibira-io/django).
+
+## Live Chat verified visitors
+
+Let signed-in users chat as themselves on the [Hibira Live Chat](https://chat.hibira.io)
+widget: sign their ID with the workspace's identity secret (Settings › Widget ›
+Verified visitors).
+
+```python
+from hibira.livechat import user_hash
+
+# <script src="https://chat.hibira.io/w/v1.js" ... data-user-id="{{ user.id }}"
+#         data-user-hash="{{ user_hash(IDENTITY_SECRET, user.id) }}" data-user-name="{{ user.name }}">
+```
+
 ## Errors
 
 Every error is a `hibira.HibiraError`. HTTP errors are `hibira.HTTPError`
@@ -262,6 +321,10 @@ client）：發送事件、私人 / presence 頻道授權、驗證 webhook、推
 以及用 `stream_to_channel` 把 LLM 的輸出即時串流到瀏覽器（React / Vue 的
 `useStream()` 直接接收）。支援 OpenAI、Anthropic、OpenAI Agents SDK、LangGraph、
 Gemini 的串流格式，並附 FastAPI 授權路由與 webhook 驗證。
+
+另有 Chat API（對話、訊息、已讀、離線推播）、等候室 middleware（`hibira.waiting_room`，
+FastAPI / Starlette 等 ASGI 與 Flask 等 WSGI 皆可用），以及 Live Chat 已驗證訪客的
+`user_hash()`。
 
 ## License
 

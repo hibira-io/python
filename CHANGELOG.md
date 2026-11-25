@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Chat API on `Client` and `AsyncClient`: `put_conversation`, `get_conversation`, `delete_conversation`, `add_members`, `remove_member`, `send_message`, `list_messages`, `mark_read`, `system_message`, `user_conversations`, and `chat_request` for any other call.
+- `hibira.waiting_room`: `verify_pass`, `sign_user`, `waiting_room_url`, and `ASGIMiddleware` (FastAPI, Starlette) / `WSGIMiddleware` (Flask) with the same behaviour as the other Hibira waiting room packages. Tested against the shared server-signed pass.
+- `hibira.livechat.user_hash` for Live Chat verified visitors.
+
 ## 0.1.0
 
 First release.
