@@ -248,6 +248,41 @@ class _Base:
         return self._push_req("DELETE", f"/customer_api/v1/instances/{{instance}}/users/{quote(str(user_id), safe='')}")
 
 
+def _q(value: Any) -> str:
+    return quote(str(value), safe="")
+
+
+def _drop_none(fields: Mapping[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in fields.items() if v is not None}
+
+
+def _chat_path(conversation_id: str, rest: str = "") -> str:
+    if not conversation_id:
+        raise ValueError("conversation_id is required")
+    return f"/conversations/{_q(conversation_id)}{rest}"
+
+
+class _ChatRequests:
+    """Request builders for the Chat API (https://hibira.io/chat-api)."""
+
+    def _signed(self, method: str, path: str, params: Mapping[str, Any] | None = None, body: Any = None) -> _Request:
+        raise NotImplementedError  # pragma: no cover
+
+    def _chat_req(self, method: str, path: str, params: Mapping[str, Any] | None = None, body: Any = None) -> _Request:
+        if not path.startswith("/"):
+            raise ValueError('path must start with "/", such as /conversations/support-42')
+        clean = _drop_none(params or {})
+        return self._signed(method.upper(), "/chat" + path, {k: str(v) for k, v in clean.items()} or None, body)
+
+    def _put_conversation_req(self, conversation_id: str, **fields: Any) -> _Request:
+        return self._chat_req("PUT", _chat_path(conversation_id), body=_drop_none(fields))
+
+    def _send_message_req(self, conversation_id: str, **fields: Any) -> _Request:
+        if not fields.get("user_id"):
+            raise ValueError("user_id is required")
+        return self._chat_req("POST", _chat_path(conversation_id, "/messages"), body=_drop_none(fields))
+
+
 def _info(info: str | Iterable[str] | None) -> str | None:
     if info is None or isinstance(info, str):
         return info or None
@@ -276,7 +311,7 @@ def _approval_fields(
     }
 
 
-class Client(_Base):
+class Client(_Base, _ChatRequests):
     """Server client for a Hibira app: publish events, authorize channels,
     verify webhooks, send push notifications and ask for approvals.
 
@@ -385,8 +420,101 @@ class Client(_Base):
             if out.get("status") != "pending" or time.monotonic() >= deadline:
                 return out
 
+    # Chat API: conversations with stored history (https://hibira.io/chat-api)
 
-class AsyncClient(_Base):
+    def chat_request(self, method: str, path: str, params: Mapping[str, Any] | None = None, body: Any = None) -> Any:
+        """Any Chat API call, signed: path is relative to /apps/APP_ID/chat, such as /conversations/ID/typing."""
+        return self._send(self._chat_req(method, path, params, body))
+
+    def put_conversation(
+        self,
+        conversation_id: str,
+        *,
+        name: str | None = None,
+        members: Sequence[str] | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        roles: Mapping[str, str] | None = None,
+        watchers: Sequence[str] | None = None,
+    ) -> Any:
+        """Create or replace a conversation; members and watchers left as None keep the current ones."""
+        return self._send(
+            self._put_conversation_req(
+                conversation_id,
+                name=name,
+                members=list(members) if members is not None else None,
+                metadata=dict(metadata) if metadata is not None else None,
+                roles=dict(roles) if roles is not None else None,
+                watchers=list(watchers) if watchers is not None else None,
+            )
+        )
+
+    def get_conversation(self, conversation_id: str) -> Any:
+        return self._send(self._chat_req("GET", _chat_path(conversation_id)))
+
+    def delete_conversation(self, conversation_id: str) -> Any:
+        """Delete a conversation with its members, messages and files."""
+        return self._send(self._chat_req("DELETE", _chat_path(conversation_id)))
+
+    def add_members(self, conversation_id: str, user_ids: str | Iterable[str]) -> Any:
+        ids = [user_ids] if isinstance(user_ids, str) else list(user_ids)
+        return self._send(self._chat_req("POST", _chat_path(conversation_id, "/members"), body={"user_ids": ids}))
+
+    def remove_member(self, conversation_id: str, user_id: str) -> Any:
+        return self._send(self._chat_req("DELETE", _chat_path(conversation_id, f"/members/{_q(user_id)}")))
+
+    def send_message(
+        self,
+        conversation_id: str,
+        user_id: str,
+        text: str | None = None,
+        *,
+        name: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        push: str | None = None,
+        push_title: str | None = None,
+        push_url: str | None = None,
+        visible_to: Sequence[str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        """Post a message as a member. push is "offline" (default), "always" or "never"."""
+        return self._send(
+            self._send_message_req(
+                conversation_id,
+                user_id=user_id,
+                text=text,
+                name=name,
+                metadata=dict(metadata) if metadata is not None else None,
+                push=push,
+                push_title=push_title,
+                push_url=push_url,
+                visible_to=list(visible_to) if visible_to is not None else None,
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    def list_messages(
+        self, conversation_id: str, *, after: int | None = None, limit: int | None = None, last: int | None = None
+    ) -> Any:
+        """Messages oldest first: after a seq (with limit), or the last n."""
+        params = {"after": after, "limit": limit, "last": last}
+        return self._send(self._chat_req("GET", _chat_path(conversation_id, "/messages"), params))
+
+    def mark_read(self, conversation_id: str, user_id: str, seq: int) -> Any:
+        body = {"user_id": user_id, "seq": seq}
+        return self._send(self._chat_req("POST", _chat_path(conversation_id, "/read"), body=body))
+
+    def system_message(self, conversation_id: str, text: str, metadata: Mapping[str, Any] | None = None) -> Any:
+        """A message with no sender, such as "Alice joined"."""
+        body = _drop_none({"text": text, "metadata": dict(metadata) if metadata is not None else None})
+        return self._send(self._chat_req("POST", _chat_path(conversation_id, "/system"), body=body))
+
+    def user_conversations(self, user_id: str, *, limit: int | None = None, before: str | None = None) -> Any:
+        """A user's conversations, latest activity first, each with its unread count."""
+        params = {"limit": limit, "before": before}
+        return self._send(self._chat_req("GET", f"/users/{_q(user_id)}/conversations", params))
+
+
+class AsyncClient(_Base, _ChatRequests):
     """asyncio version of Client: the same methods, HTTP ones are awaitable.
 
     authenticate_channel, authenticate_user, verify_webhook and push_token
@@ -477,3 +605,98 @@ class AsyncClient(_Base):
             out = await self.get_approval(approval_id, wait=max(0, min(MAX_APPROVAL_WAIT, int(left))))
             if out.get("status") != "pending" or time.monotonic() >= deadline:
                 return out
+
+    # Chat API: conversations with stored history (https://hibira.io/chat-api)
+
+    async def chat_request(
+        self, method: str, path: str, params: Mapping[str, Any] | None = None, body: Any = None
+    ) -> Any:
+        """Any Chat API call, signed: path is relative to /apps/APP_ID/chat, such as /conversations/ID/typing."""
+        return await self._send(self._chat_req(method, path, params, body))
+
+    async def put_conversation(
+        self,
+        conversation_id: str,
+        *,
+        name: str | None = None,
+        members: Sequence[str] | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        roles: Mapping[str, str] | None = None,
+        watchers: Sequence[str] | None = None,
+    ) -> Any:
+        """Create or replace a conversation; members and watchers left as None keep the current ones."""
+        return await self._send(
+            self._put_conversation_req(
+                conversation_id,
+                name=name,
+                members=list(members) if members is not None else None,
+                metadata=dict(metadata) if metadata is not None else None,
+                roles=dict(roles) if roles is not None else None,
+                watchers=list(watchers) if watchers is not None else None,
+            )
+        )
+
+    async def get_conversation(self, conversation_id: str) -> Any:
+        return await self._send(self._chat_req("GET", _chat_path(conversation_id)))
+
+    async def delete_conversation(self, conversation_id: str) -> Any:
+        """Delete a conversation with its members, messages and files."""
+        return await self._send(self._chat_req("DELETE", _chat_path(conversation_id)))
+
+    async def add_members(self, conversation_id: str, user_ids: str | Iterable[str]) -> Any:
+        ids = [user_ids] if isinstance(user_ids, str) else list(user_ids)
+        return await self._send(self._chat_req("POST", _chat_path(conversation_id, "/members"), body={"user_ids": ids}))
+
+    async def remove_member(self, conversation_id: str, user_id: str) -> Any:
+        return await self._send(self._chat_req("DELETE", _chat_path(conversation_id, f"/members/{_q(user_id)}")))
+
+    async def send_message(
+        self,
+        conversation_id: str,
+        user_id: str,
+        text: str | None = None,
+        *,
+        name: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        push: str | None = None,
+        push_title: str | None = None,
+        push_url: str | None = None,
+        visible_to: Sequence[str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        """Post a message as a member. push is "offline" (default), "always" or "never"."""
+        return await self._send(
+            self._send_message_req(
+                conversation_id,
+                user_id=user_id,
+                text=text,
+                name=name,
+                metadata=dict(metadata) if metadata is not None else None,
+                push=push,
+                push_title=push_title,
+                push_url=push_url,
+                visible_to=list(visible_to) if visible_to is not None else None,
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    async def list_messages(
+        self, conversation_id: str, *, after: int | None = None, limit: int | None = None, last: int | None = None
+    ) -> Any:
+        """Messages oldest first: after a seq (with limit), or the last n."""
+        params = {"after": after, "limit": limit, "last": last}
+        return await self._send(self._chat_req("GET", _chat_path(conversation_id, "/messages"), params))
+
+    async def mark_read(self, conversation_id: str, user_id: str, seq: int) -> Any:
+        body = {"user_id": user_id, "seq": seq}
+        return await self._send(self._chat_req("POST", _chat_path(conversation_id, "/read"), body=body))
+
+    async def system_message(self, conversation_id: str, text: str, metadata: Mapping[str, Any] | None = None) -> Any:
+        """A message with no sender, such as "Alice joined"."""
+        body = _drop_none({"text": text, "metadata": dict(metadata) if metadata is not None else None})
+        return await self._send(self._chat_req("POST", _chat_path(conversation_id, "/system"), body=body))
+
+    async def user_conversations(self, user_id: str, *, limit: int | None = None, before: str | None = None) -> Any:
+        """A user's conversations, latest activity first, each with its unread count."""
+        params = {"limit": limit, "before": before}
+        return await self._send(self._chat_req("GET", f"/users/{_q(user_id)}/conversations", params))
